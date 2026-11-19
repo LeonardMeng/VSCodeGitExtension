@@ -6,7 +6,7 @@ ForkGit is a VS Code extension that brings the most useful workflows of desktop 
 
 ![Local Changes](docs/images/local-changes.png)
 
-> Current version **0.2.0**. The screenshots are generated from the built-in mock preview (`npm run dev:web`) with sample data.
+> Current version **0.3.0**. The screenshots are generated from the built-in mock preview (`npm run dev:web`) with sample data.
 
 ## Contents
 
@@ -37,9 +37,10 @@ ForkGit is a VS Code extension that brings the most useful workflows of desktop 
 
 ### Local changes
 - Separate **Unstaged** and **Staged** sections with tree and flat-list modes
+- **Checkboxes** on every file, folder and section header for batch stage / unstage, with indeterminate folder state
 - Status badges: `M` modified, `+` added / untracked, `−` deleted, `R` renamed, `C` conflicted
 - Click a file to preview its diff; double-click or press `Space` to stage / unstage
-- Multi-select and batch stage, unstage or discard
+- Multi-select and batch stage, unstage or discard; the stage / unstage buttons show the selected count
 - Drag files between the staged and unstaged sections
 - Discard changes, add to `.gitignore`, show in Finder / Explorer
 - Commit box with subject, description, amend and recent commit messages

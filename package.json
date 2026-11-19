@@ -2,7 +2,7 @@
   "name": "forkgit",
   "displayName": "ForkGit — Git in VS Code",
   "description": "Fork-level Git experience inside VS Code: branch folders, visual staging, hunk/line staging, commit graph, stash, tags and submodules.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "forkgit",
   "license": "MIT",
   "engines": {

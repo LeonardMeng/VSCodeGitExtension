@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Added checkboxes to every changed-file row in both Unstaged and Staged lists, with side-aware selection so a file that has both staged and unstaged changes can be selected independently.
+- Added folder-level and section-header checkboxes with indeterminate states for partial selections.
+- Stage / Unstage buttons now show the number of checked files (`Stage 3`, `Unstage 1`).
+- Kept checkbox selection independent from the diff preview, and preserved selections while previewing other files.
+- Updated the Local Changes screenshot.
+
 ## 0.2.0
 
 - Added a visible progress bar with percentages for fetch, pull and push. Git stderr progress is parsed incrementally, mapped to an overall percentage, and mirrored to the webview, status bar and VS Code notification.

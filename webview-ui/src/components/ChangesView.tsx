@@ -16,6 +16,7 @@ import { FileTypeIcon, StatusBadge } from './StatusBadge';
 import { DiffViewer } from './DiffViewer';
 import { CommitBox } from './CommitBox';
 import { StashPreviewPanel } from './StashPreviewPanel';
+import { SelectionCheckbox } from './SelectionCheckbox';
 import { buildFileTree, collectFolderPaths, flattenFiles, flattenTree, TreeNode } from '../utils/tree';
 import { baseName, dirName, formatBytes, middleEllipsis } from '../utils/format';
 
@@ -25,6 +26,8 @@ interface SelectedFile {
   path: string;
   side: Side;
 }
+
+const selectionKey = (side: Side, filePath: string): string => `${side}\u0000${filePath}`;
 
 interface StashPreviewState {
   index: number;
@@ -107,9 +110,14 @@ export function ChangesView(props: ChangesViewProps): React.ReactElement {
   useEffect(() => {
     setSelectedPaths((current) => {
       const valid = new Set(
-        [...current].filter(
-          (path) => unstaged.some((file) => file.path === path) || staged.some((file) => file.path === path)
-        )
+        [...current].filter((key) => {
+          const [side, ...pathParts] = key.split('\u0000');
+          const filePath = pathParts.join('\u0000');
+          return (
+            (side === 'unstaged' && unstaged.some((file) => file.path === filePath)) ||
+            (side === 'staged' && staged.some((file) => file.path === filePath))
+          );
+        })
       );
       return valid.size === current.size ? current : valid;
     });
@@ -412,7 +420,9 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
 
   const selectedPathsFor = (side: Side): string[] => {
     const source = side === 'staged' ? allStaged : allUnstaged;
-    return source.filter((file) => selectedPaths.has(file.path)).map((file) => file.path);
+    return source
+      .filter((file) => selectedPaths.has(selectionKey(side, file.path)))
+      .map((file) => file.path);
   };
 
   const stageSelectedOrAll = () => {
@@ -431,16 +441,42 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
     else if (selected) props.onDiscard([selected.path]);
   };
 
+  const togglePaths = (paths: string[], checked: boolean, side: Side) => {
+    const next = new Set(selectedPaths);
+    for (const filePath of paths) {
+      const key = selectionKey(side, filePath);
+      if (checked) next.add(key);
+      else next.delete(key);
+    }
+    props.onSelectedPathsChange(next);
+  };
+
+  const toggleAll = (files: ChangeFile[], checked: boolean, side: Side) => {
+    togglePaths(files.map((file) => file.path), checked, side);
+  };
+
+  const selectionState = (
+    files: ChangeFile[],
+    side: Side
+  ): { checked: boolean; indeterminate: boolean } => {
+    if (!files.length) return { checked: false, indeterminate: false };
+    const selectedCount = files.filter((file) => selectedPaths.has(selectionKey(side, file.path))).length;
+    return {
+      checked: selectedCount === files.length,
+      indeterminate: selectedCount > 0 && selectedCount < files.length
+    };
+  };
+
   const handleClick = (file: ChangeFile, side: Side, event: React.MouseEvent) => {
     const next = new Set(selectedPaths);
+    const key = selectionKey(side, file.path);
     if (event.metaKey || event.ctrlKey) {
-      if (next.has(file.path)) next.delete(file.path);
-      else next.add(file.path);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
     } else if (event.shiftKey) {
-      next.add(file.path);
-    } else {
-      next.clear();
-      next.add(file.path);
+      next.add(key);
+    } else if (![...next].some((entry) => entry.startsWith(`${side}\u0000`))) {
+      next.add(key);
     }
     props.onSelectedPathsChange(next);
     props.onSelect(file, side);
@@ -460,8 +496,10 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
     }
   };
 
-  const dragPaths = (file: ChangeFile): string[] =>
-    selectedPaths.has(file.path) ? [...selectedPaths] : [file.path];
+  const dragPaths = (file: ChangeFile, side: Side): string[] => {
+    const selected = selectedPathsFor(side);
+    return selected.includes(file.path) ? selected : [file.path];
+  };
 
   const fileMenu = (file: ChangeFile, side: Side): MenuItem[] => {
     const items: MenuItem[] = [];
@@ -609,6 +647,12 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
           <div className="change-section-header">
             <div className="change-section-title">
               <Icon name="chevronDown" size={11} />
+              <SelectionCheckbox
+                checked={selectionState(unstaged, 'unstaged').checked}
+                indeterminate={selectionState(unstaged, 'unstaged').indeterminate}
+                title={selectionState(unstaged, 'unstaged').checked ? 'Clear unstaged selection' : 'Select all unstaged files'}
+                onChange={(checked) => toggleAll(unstaged, checked, 'unstaged')}
+              />
               <span>Unstaged</span>
               <span className="change-count">{allUnstaged.length}</span>
               {allUnstaged.some((file) => file.conflicted) ? (
@@ -631,7 +675,9 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
                 onClick={stageSelectedOrAll}
                 title={selectedPathsFor('unstaged').length ? 'Stage selected files' : 'Stage all changes'}
               >
-                Stage
+                {selectedPathsFor('unstaged').length
+                  ? `Stage ${selectedPathsFor('unstaged').length}`
+                  : 'Stage'}
               </button>
             </div>
           </div>
@@ -644,13 +690,14 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
                 collapsed={collapsedUnstaged}
                 expanded={expandedUnstaged}
                 onToggleFolder={(path) => toggleFolder('unstaged', path)}
+                onTogglePaths={(paths, checked) => togglePaths(paths, checked, 'unstaged')}
                 selected={selected}
                 selectedPaths={selectedPaths}
                 onClick={handleClick}
                 onDoubleClick={(file) => props.onStage([file.path])}
                 onContextMenu={(event, file) => openMenu(event, fileMenu(file, 'unstaged'))}
                 onDragStart={(file, event) => {
-                  const paths = dragPaths(file);
+                  const paths = dragPaths(file, 'unstaged');
                   event.dataTransfer.setData('application/x-forkgit-files', JSON.stringify(paths));
                   event.dataTransfer.setData('text/plain', paths.join('\n'));
                   event.dataTransfer.effectAllowed = 'move';
@@ -680,6 +727,12 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
           <div className="change-section-header">
             <div className="change-section-title">
               <Icon name="chevronDown" size={11} />
+              <SelectionCheckbox
+                checked={selectionState(staged, 'staged').checked}
+                indeterminate={selectionState(staged, 'staged').indeterminate}
+                title={selectionState(staged, 'staged').checked ? 'Clear staged selection' : 'Select all staged files'}
+                onChange={(checked) => toggleAll(staged, checked, 'staged')}
+              />
               <span>Staged</span>
               <span className="change-count">{allStaged.length}</span>
             </div>
@@ -691,7 +744,9 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
                 onClick={unstageSelectedOrAll}
                 title={selectedPathsFor('staged').length ? 'Unstage selected files' : 'Unstage all changes'}
               >
-                Unstage
+                {selectedPathsFor('staged').length
+                  ? `Unstage ${selectedPathsFor('staged').length}`
+                  : 'Unstage'}
               </button>
             </div>
           </div>
@@ -704,13 +759,14 @@ function ChangesPanel(props: ChangesPanelProps): React.ReactElement {
                 collapsed={collapsedStaged}
                 expanded={expandedStaged}
                 onToggleFolder={(path) => toggleFolder('staged', path)}
+                onTogglePaths={(paths, checked) => togglePaths(paths, checked, 'staged')}
                 selected={selected}
                 selectedPaths={selectedPaths}
                 onClick={handleClick}
                 onDoubleClick={(file) => props.onUnstage([file.path])}
                 onContextMenu={(event, file) => openMenu(event, fileMenu(file, 'staged'))}
                 onDragStart={(file, event) => {
-                  const paths = dragPaths(file);
+                  const paths = dragPaths(file, 'staged');
                   event.dataTransfer.setData('application/x-forkgit-files', JSON.stringify(paths));
                   event.dataTransfer.setData('text/plain', paths.join('\n'));
                   event.dataTransfer.effectAllowed = 'move';
@@ -783,6 +839,7 @@ function FileTreeList({
   collapsed,
   expanded,
   onToggleFolder,
+  onTogglePaths,
   selected,
   selectedPaths,
   onClick,
@@ -796,6 +853,7 @@ function FileTreeList({
   collapsed: Set<string>;
   expanded: Set<string>;
   onToggleFolder: (path: string) => void;
+  onTogglePaths: (paths: string[], checked: boolean) => void;
   selected: SelectedFile | null;
   selectedPaths: Set<string>;
   onClick: (file: ChangeFile, side: Side, event: React.MouseEvent) => void;
@@ -826,29 +884,52 @@ function FileTreeList({
       {rows.map(({ row, depth }) => {
         if (row.kind === 'folder') {
           const isOpen = expanded.has(row.path);
+          const folderFiles = collectFiles(row.folder?.children ?? []);
+          const selectedCount = folderFiles.filter((file) =>
+            selectedPaths.has(selectionKey(side, file.path))
+          ).length;
           return (
-            <button
+            <div
               key={`folder:${row.path}`}
-              type="button"
+              role="button"
+              tabIndex={0}
               className="file-row folder-row"
               style={{ paddingLeft: 8 + depth * 14 }}
               onClick={() => onToggleFolder(row.path)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onToggleFolder(row.path);
+                }
+              }}
               title={row.path}
             >
+              <SelectionCheckbox
+                checked={folderFiles.length > 0 && selectedCount === folderFiles.length}
+                indeterminate={selectedCount > 0 && selectedCount < folderFiles.length}
+                title={
+                  selectedCount === folderFiles.length && folderFiles.length > 0
+                    ? `Clear selection in ${row.name}`
+                    : `Select all files in ${row.name}`
+                }
+                onChange={(checked) => onTogglePaths(folderFiles.map((file) => file.path), checked)}
+              />
               <Icon name={isOpen ? 'chevronDown' : 'chevronRight'} size={10} />
               <Icon name={isOpen ? 'folderOpen' : 'folder'} size={14} className="folder-icon" />
               <span className="folder-name">{row.name}</span>
               <span className="tree-count">{countFiles(row.folder?.children ?? [])}</span>
-            </button>
+            </div>
           );
         }
         const file = row.file!;
         const active = selected?.path === file.path && selected.side === side;
+        const isSelected = selectedPaths.has(selectionKey(side, file.path));
         const badge = side === 'staged' ? file.stagedBadge ?? file.indexStatus : file.unstagedBadge ?? file.worktreeStatus;
         return (
           <div
             key={`file:${side}:${file.path}`}
-            className={`file-row file-row-item${active ? ' active' : ''}${selectedPaths.has(file.path) ? ' multi-selected' : ''}${selectedPaths.has(file.path) && selectedPaths.size > 1 ? ' in-multi' : ''}`}
+            className={`file-row file-row-item${active ? ' active' : ''}${isSelected ? ' multi-selected' : ''}${isSelected && selectedPaths.size > 1 ? ' in-multi' : ''}`}
             style={{ paddingLeft: 8 + depth * 14 }}
             title={`${file.path}${file.oldPath ? `\n(renamed from ${file.oldPath})` : ''}`}
             role="button"
@@ -863,6 +944,15 @@ function FileTreeList({
             }}
           >
             {mode === 'tree' ? <span className="tree-spacer" /> : null}
+            <SelectionCheckbox
+              checked={selectedPaths.has(selectionKey(side, file.path))}
+              title={
+                selectedPaths.has(selectionKey(side, file.path))
+                  ? `Deselect ${file.path}`
+                  : `Select ${file.path}`
+              }
+              onChange={(checked) => onTogglePaths([file.path], checked)}
+            />
             <FileTypeIcon path={file.path} />
             {mode === 'list' ? (
               <span className="file-name">
@@ -893,4 +983,13 @@ function countFiles(nodes: TreeNode[]): number {
     else count += countFiles(node.children);
   }
   return count;
+}
+
+function collectFiles(nodes: TreeNode[]): ChangeFile[] {
+  const files: ChangeFile[] = [];
+  for (const node of nodes) {
+    if (node.kind === 'file') files.push(node.file);
+    else files.push(...collectFiles(node.children));
+  }
+  return files;
 }
