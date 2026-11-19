@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+media/webview/
+.npm-cache/
+.vscode-test/
+*.vsix
+.DS_Store
+coverage/
+test-tmp/
+screenshots/
+.tmp-test/

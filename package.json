@@ -1,0 +1,274 @@
+{
+  "name": "forkgit",
+  "displayName": "ForkGit — Git in VS Code",
+  "description": "Fork-level Git experience inside VS Code: branch folders, visual staging, hunk/line staging, commit graph, stash, tags and submodules.",
+  "version": "0.1.0",
+  "publisher": "forkgit",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "ForkGit runs Git commands against the workspace and requires a trusted workspace."
+    }
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "scm",
+    "source control",
+    "stash",
+    "commit graph"
+  ],
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/parkerzhai/VSCodeGitExtension.git"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:forkgit.navigator",
+    "onCommand:forkgit.open",
+    "onCommand:forkgit.quickLaunch",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "forkgit.open",
+        "title": "Open Git Panel",
+        "category": "ForkGit",
+        "icon": "$(source-control)"
+      },
+      {
+        "command": "forkgit.quickLaunch",
+        "title": "Quick Launch",
+        "category": "ForkGit",
+        "icon": "$(search)"
+      },
+      {
+        "command": "forkgit.fetch",
+        "title": "Fetch",
+        "category": "ForkGit",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "forkgit.pull",
+        "title": "Pull",
+        "category": "ForkGit",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "forkgit.push",
+        "title": "Push",
+        "category": "ForkGit",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "forkgit.stash",
+        "title": "Stash Changes",
+        "category": "ForkGit",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "forkgit.createBranch",
+        "title": "New Branch",
+        "category": "ForkGit",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "forkgit.refresh",
+        "title": "Refresh",
+        "category": "ForkGit",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forkgit.showHistory",
+        "title": "Show All Commits",
+        "category": "ForkGit",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "forkgit.openRepository",
+        "title": "Open Repository…",
+        "category": "ForkGit",
+        "icon": "$(folder-opened)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "forkgit.open",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      },
+      {
+        "command": "forkgit.quickLaunch",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      }
+    ],
+    "configuration": {
+      "title": "ForkGit",
+      "properties": {
+        "forkgit.changes.viewMode": {
+          "type": "string",
+          "enum": [
+            "tree",
+            "list"
+          ],
+          "default": "tree",
+          "description": "How changed files are displayed."
+        },
+        "forkgit.diff.mode": {
+          "type": "string",
+          "enum": [
+            "unified",
+            "split"
+          ],
+          "default": "unified",
+          "description": "Default diff layout."
+        },
+        "forkgit.diff.contextLines": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Number of context lines shown around each change."
+        },
+        "forkgit.diff.showWhitespace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Render spaces and tabs with visible symbols."
+        },
+        "forkgit.diff.wordWrap": {
+          "type": "boolean",
+          "default": false,
+          "description": "Wrap long diff lines."
+        },
+        "forkgit.branches.groupByPrefix": {
+          "type": "boolean",
+          "default": true,
+          "description": "Group branches into folders by their / prefix."
+        },
+        "forkgit.pull.rebase": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use rebase instead of merge when pulling."
+        },
+        "forkgit.checkout.autoStash": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically stash local changes before switching branches."
+        },
+        "forkgit.fetch.autoInterval": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Automatically fetch every N minutes (0 disables)."
+        },
+        "forkgit.gitPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a custom git executable. Empty uses the git on PATH."
+        },
+        "forkgit.confirmDestructiveActions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for confirmation before destructive Git operations."
+        },
+        "forkgit.history.pageSize": {
+          "type": "number",
+          "default": 300,
+          "minimum": 50,
+          "maximum": 2000,
+          "description": "Number of commits loaded per history page."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "forkgit",
+          "title": "ForkGit",
+          "icon": "media/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "forkgit": [
+        {
+          "id": "forkgit.navigator",
+          "name": "Git",
+          "icon": "media/activity-icon.svg",
+          "contextualTitle": "ForkGit"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "forkgit.refresh",
+          "when": "view == forkgit.navigator",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forkgit.open",
+          "when": "view == forkgit.navigator",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forkgit.openRepository",
+          "when": "view == forkgit.navigator",
+          "group": "1_open@1"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "forkgit.navigator",
+        "contents": "No Git repository detected in this workspace.\n[Open Repository](command:forkgit.openRepository)\n[Open Git Panel](command:forkgit.open)"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "npm run build:webview && npm run build:extension",
+    "build:extension": "node esbuild.js --production",
+    "build:webview": "vite build",
+    "watch": "node esbuild.js --watch",
+    "dev:web": "vite",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p webview-ui/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:vscode": "npm run build && esbuild test/vscode/suite.ts --bundle --outfile=.vscode-test/out/suite.js --external:vscode --format=cjs --platform=node --target=node20 && node test/vscode/run.mjs",
+    "package": "npm run build && vsce package --no-dependencies",
+    "vscode:prepublish": "npm run build"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/vscode": "^1.90.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8"
+  },
+  "author": "parkerzhai",
+  "bugs": {
+    "url": "https://github.com/parkerzhai/VSCodeGitExtension/issues"
+  },
+  "homepage": "https://github.com/parkerzhai/VSCodeGitExtension#readme"
+}
