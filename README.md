@@ -6,7 +6,7 @@ ForkGit is a VS Code extension that brings the most useful workflows of desktop 
 
 ![Local Changes](docs/images/local-changes.png)
 
-> Current version **0.1.0**. The screenshots are generated from the built-in mock preview (`npm run dev:web`) with sample data.
+> Current version **0.2.0**. The screenshots are generated from the built-in mock preview (`npm run dev:web`) with sample data.
 
 ## Contents
 
@@ -18,6 +18,7 @@ ForkGit is a VS Code extension that brings the most useful workflows of desktop 
 - [Commands and shortcuts](#commands-and-shortcuts)
 - [Configuration](#configuration)
 - [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 - [Known limitations](#known-limitations)
 - [License](#license)
@@ -28,7 +29,7 @@ ForkGit is a VS Code extension that brings the most useful workflows of desktop 
 
 ### Branches
 - Local and remote branches are grouped into folders by their `/` prefix (`feature/`, `Public-Release/`, ...)
-- Ahead / behind counts relative to the upstream branch
+- **Push / pull counters on every branch** relative to its upstream, for example `push 2` and `pull 1`; branches without an upstream are marked as such
 - Single-click a branch to show its commits, double-click to check it out
 - Context menu: checkout, merge, rebase, create a branch from here, rename, delete, push, set upstream
 - Remote branches create a local tracking branch on checkout
@@ -65,7 +66,10 @@ ForkGit is a VS Code extension that brings the most useful workflows of desktop 
 - Multiple remotes
 - Autostash for pull, merge, rebase and branch checkout
 - Set upstream, push the current branch and delete remote branches
+- **Live progress bar with percentage** for fetch, pull and push, shown in the webview, status bar and VS Code notification
 - Progress, error and conflict reporting
+
+![Fetch progress](docs/images/progress.png)
 
 ### Stash
 - Stash tracked changes, including untracked files, or staged changes only
@@ -364,6 +368,40 @@ This starts an isolated VS Code 1.95.3, loads the extension and verifies command
 - [x] `.vsix` packaging
 
 ---
+
+## Troubleshooting
+
+### “Git executable not found: git”
+
+This message is emitted by ForkGit, not by Git itself. It means the VS Code **extension host** could not spawn the `git` binary, so the command was never executed.
+
+Check, in the same VS Code window:
+
+```bash
+command -v git
+git --version
+```
+
+Then:
+
+- Set `forkgit.gitPath` to the absolute path printed by `command -v git` (for example `/usr/bin/git`) and reload the window.
+- If VS Code was opened from the Dock, quit it and launch it from a terminal (`code /path/to/project`) so the extension host inherits your shell `PATH`. ForkGit also adds the common macOS locations `/opt/homebrew/bin`, `/usr/local/bin` and `/usr/bin` automatically.
+- In Remote SSH, WSL, Dev Containers or Codespaces, install Git in the remote environment. A terminal on your local machine is not enough.
+- If the repository folder was moved or deleted, ForkGit now reports `Repository folder not found: …` instead of claiming that Git is missing.
+
+### `git rev-parse --git-dir` outside a repository
+
+This command legitimately fails outside a Git repository:
+
+```
+fatal: not a git repository (or any of the parent directories): .git
+```
+
+Run it inside the repository, or check the exit code:
+
+```bash
+git rev-parse --git-dir || echo "not a git repository"
+```
 
 ## Known limitations
 

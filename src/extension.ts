@@ -65,6 +65,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(service.onDidChange(updateChrome));
   context.subscriptions.push(
+    service.onDidProgress((progress) => {
+      if (!statusBar) return;
+      if (!progress) {
+        updateChrome();
+        return;
+      }
+      statusBar.text = `$(sync~spin) ${progress.label}${
+        progress.percent === null ? '' : ` ${progress.percent}%`
+      }`;
+      statusBar.tooltip = progress.detail;
+      statusBar.show();
+    })
+  );
+  context.subscriptions.push(
     service.onDidWantView(({ view, section }) => {
       MainPanel.createOrShow(context, service!, view, section);
     })

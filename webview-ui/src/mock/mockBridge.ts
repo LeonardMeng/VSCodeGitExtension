@@ -78,6 +78,31 @@ class MockBridge {
     }
   }
 
+  private async networkProgress(
+    operation: 'fetch' | 'pull' | 'push',
+    label: string
+  ): Promise<void> {
+    this.send({ type: 'busy', busy: true, label });
+    const steps: Array<[number | null, string]> = [
+      [null, 'Connecting…'],
+      [14, 'Enumerating objects 42%'],
+      [32, 'Receiving objects 38%'],
+      [58, 'Receiving objects 74%'],
+      [82, 'Resolving deltas 55%'],
+      [96, 'Updating files 88%'],
+      [100, 'Done']
+    ];
+    try {
+      for (const [percent, detail] of steps) {
+        this.send({ type: 'progress', progress: { operation, label, percent, detail } });
+        await new Promise((resolve) => setTimeout(resolve, 130));
+      }
+    } finally {
+      this.send({ type: 'progress', progress: null });
+      this.send({ type: 'busy', busy: false });
+    }
+  }
+
   private updateFiles(mutator: (files: typeof this.state.files) => typeof this.state.files): void {
     this.state = {
       ...this.state,
@@ -323,23 +348,20 @@ class MockBridge {
         this.toast('info', `Mock: ${message.type} complete.`);
         return;
       case 'fetch':
-        await this.busy('Fetching', () => {
-          this.state = { ...this.state, refreshedAt: Date.now() };
-        });
+        await this.networkProgress('fetch', 'Fetching all remotes');
+        this.state = { ...this.state, refreshedAt: Date.now() };
         this.toast('info', 'Mock: fetched all remotes.');
         this.sendState();
         return;
       case 'pull':
-        await this.busy('Pulling', () => {
-          this.state = { ...this.state, refreshedAt: Date.now() };
-        });
+        await this.networkProgress('pull', 'Pulling');
+        this.state = { ...this.state, refreshedAt: Date.now() };
         this.toast('info', 'Mock: pull complete.');
         this.sendState();
         return;
       case 'push':
-        await this.busy('Pushing', () => {
-          this.state = { ...this.state, refreshedAt: Date.now() };
-        });
+        await this.networkProgress('push', 'Pushing');
+        this.state = { ...this.state, refreshedAt: Date.now() };
         this.toast('info', 'Mock: push complete.');
         this.sendState();
         return;

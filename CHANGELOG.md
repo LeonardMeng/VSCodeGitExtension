@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0
+
+- Added a visible progress bar with percentages for fetch, pull and push. Git stderr progress is parsed incrementally, mapped to an overall percentage, and mirrored to the webview, status bar and VS Code notification.
+- Added `push N` / `pull N` counters to every local branch in the sidebar, relative to its upstream. Branches without an upstream are marked, and upstream configuration now works for any branch from its context menu.
+- Added progress parser and real `git push --progress` streaming tests.
+- Updated the README screenshots for branch counters and operation progress.
+
+## 0.1.1
+
+- Fixed a misleading `Git executable not found: git` error when the actual problem was a repository folder that had been moved or deleted. ForkGit now validates the working directory first and reports `Repository folder not found`.
+- Improved the missing-Git error with a direct hint to set `forkgit.gitPath` or fix `PATH`.
+- Added common macOS Git locations (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`) to the child process `PATH`, and support for `~` in `forkgit.gitPath`.
+- Stale repositories whose folders no longer exist are now pruned instead of being refreshed repeatedly.
+- Added regression tests and a Troubleshooting section to the README.
+- Test repositories now live in the OS temporary directory, so running the test suite no longer creates repositories inside the open workspace.
+
 ## 0.1.0
 
 ### Added
@@ -15,4 +31,5 @@
 - Lightweight and annotated tags (create, push, delete, checkout), submodule listing and update/open.
 - Multi-repository tabs, Activity Bar navigator, status bar, Quick Launch, deep links and VS Code command / menu integration.
 - Mock browser preview (`npm run dev:web`) for UI development.
+- Clear diagnostics for missing Git installations and missing repository folders, plus fallback PATH entries for common macOS Git locations.
 - Vitest tests for parsers, patches and graph layout; real temporary-repository integration tests; `@vscode/test-electron` extension host test.

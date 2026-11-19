@@ -47,6 +47,9 @@ export class MainPanel implements vscode.Disposable {
       this.service.onDidBusy(({ busy, label }) => {
         this.post({ type: 'busy', busy, label });
       }),
+      this.service.onDidProgress((progress) => {
+        this.post({ type: 'progress', progress });
+      }),
       this.service.onDidWantView(({ view, section }) => {
         this.view = view;
         this.reveal();
@@ -287,7 +290,7 @@ export class MainPanel implements vscode.Disposable {
           await this.service.pushBranch(message.name, message.force ?? false);
           return;
         case 'setUpstream':
-          await this.service.setUpstream();
+          await this.service.setUpstream(message.branch);
           return;
         case 'fetch':
           await this.service.fetch(message.all ?? true);

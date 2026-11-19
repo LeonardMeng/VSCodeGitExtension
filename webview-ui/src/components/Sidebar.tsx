@@ -204,6 +204,7 @@ export function Sidebar(props: SidebarProps): React.ReactElement {
           id="branches"
           title="Branches"
           count={state.branches.length}
+          hint="Push/pull counts are relative to each branch's upstream. Fetch to update remote counts."
           collapsed={!isFiltering && collapsedSections.has('branches')}
           onToggle={() => toggleSection('branches')}
           onAction={() => props.onMenuAction('newBranch')}
@@ -364,6 +365,7 @@ function SidebarSectionBlock({
   id,
   title,
   count,
+  hint,
   collapsed,
   onToggle,
   onAction,
@@ -374,6 +376,7 @@ function SidebarSectionBlock({
   id: SidebarSection;
   title: string;
   count: number;
+  hint?: string;
   collapsed: boolean;
   onToggle: () => void;
   onAction?: () => void;
@@ -384,7 +387,7 @@ function SidebarSectionBlock({
   return (
     <section className="sidebar-section" id={`sidebar-section-${id}`}>
       <div className="sidebar-section-header">
-        <button type="button" className="sidebar-section-toggle" onClick={onToggle}>
+        <button type="button" className="sidebar-section-toggle" onClick={onToggle} title={hint}>
           <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={11} />
           <span className="sidebar-section-title">{title}</span>
           <span className="sidebar-section-count">{count}</span>
@@ -458,7 +461,11 @@ function BranchTree({
           type="button"
           className={`sidebar-row branch-row${branch.current ? ' current' : ''}`}
           style={{ paddingLeft: 20 + depth * 12 }}
-          title={`${branch.fullName}${branch.subject ? `\n${branch.subject}` : ''}\n\nClick to view commits · double-click to checkout`}
+          title={`${branch.fullName}${branch.subject ? `\n${branch.subject}` : ''}${
+            branch.upstream
+              ? `\nUpstream: ${branch.upstream}\n${branch.ahead} to push · ${branch.behind} to pull`
+              : '\nNo upstream configured'
+          }\n\nClick to view commits · double-click to checkout`}
           onClick={() => onShowCommits(branch)}
           onDoubleClick={() => onCheckout(branch)}
           onContextMenu={(event) => onContextMenu(event, branch)}
@@ -469,8 +476,37 @@ function BranchTree({
             className={branch.current ? 'branch-current-icon' : 'branch-icon'}
           />
           <span className="sidebar-row-label">{node.name}</span>
-          {branch.ahead ? <span className="sync-count sync-ahead">↑{branch.ahead}</span> : null}
-          {branch.behind ? <span className="sync-count sync-behind">↓{branch.behind}</span> : null}
+          {!isRemote ? (
+            branch.upstream ? (
+              <>
+                {branch.ahead > 0 ? (
+                  <span
+                    className="sync-badge sync-push"
+                    title={`${branch.ahead} commit${branch.ahead === 1 ? '' : 's'} to push to ${branch.upstream}`}
+                  >
+                    push {branch.ahead}
+                  </span>
+                ) : null}
+                {branch.behind > 0 ? (
+                  <span
+                    className="sync-badge sync-pull"
+                    title={`${branch.behind} commit${branch.behind === 1 ? '' : 's'} to pull from ${branch.upstream}`}
+                  >
+                    pull {branch.behind}
+                  </span>
+                ) : null}
+                {branch.ahead === 0 && branch.behind === 0 ? (
+                  <span className="sync-badge sync-clean" title={`Up to date with ${branch.upstream}`}>
+                    ✓
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <span className="sync-badge sync-missing" title="No upstream configured. Use Set Upstream to enable push/pull counts.">
+                no upstream
+              </span>
+            )
+          ) : null}
         </button>
       );
     });
@@ -626,8 +662,7 @@ function branchMenu(branch: BranchInfo, isRemote: boolean, props: SidebarProps):
     {
       label: 'Set Upstream…',
       icon: 'link',
-      disabled: !branch.current,
-      onSelect: () => props.onMenuAction('setUpstream')
+      onSelect: () => props.onMenuAction('setUpstream', { name: branch.name })
     },
     { separator: true },
     {

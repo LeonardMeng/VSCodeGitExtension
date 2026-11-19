@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { GitRepository } from '../src/git/Repository';
-
-const TMP_ROOT = path.join(process.cwd(), '.tmp-test');
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, {
@@ -22,8 +21,7 @@ function git(cwd: string, args: string[]): string {
 }
 
 function makeRepo(): string {
-  fs.mkdirSync(TMP_ROOT, { recursive: true });
-  const root = fs.mkdtempSync(path.join(TMP_ROOT, 'repo-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'forkgit-repo-'));
   git(root, ['init', '-q', '-b', 'main']);
   git(root, ['config', 'user.name', 'Test']);
   git(root, ['config', 'user.email', 'test@example.com']);

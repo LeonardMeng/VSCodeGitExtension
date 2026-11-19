@@ -5,6 +5,7 @@ import {
   AppConfig,
   CommitAction,
   DiffOptions,
+  OperationProgress,
   DiffScope,
   FileDiff,
   HistoryPage,
@@ -15,6 +16,7 @@ import {
   WebviewView
 } from '../protocol/types';
 import { GitCli, GitError, findRepositoryRoot } from './GitCli';
+import { GitProgressParser, ProgressOperation } from './progress';
 import { GitRepository } from './Repository';
 
 export interface StatePayload {
@@ -38,9 +40,11 @@ export class GitService implements vscode.Disposable {
   private readonly onDidChangeEmitter = new vscode.EventEmitter<StatePayload>();
   private readonly onDidBusyEmitter = new vscode.EventEmitter<{ busy: boolean; label?: string }>();
   private readonly onDidWantViewEmitter = new vscode.EventEmitter<{ view: WebviewView; section?: string }>();
+  private readonly onDidProgressEmitter = new vscode.EventEmitter<OperationProgress | null>();
   readonly onDidChange = this.onDidChangeEmitter.event;
   readonly onDidBusy = this.onDidBusyEmitter.event;
   readonly onDidWantView = this.onDidWantViewEmitter.event;
+  readonly onDidProgress = this.onDidProgressEmitter.event;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.output = vscode.window.createOutputChannel('ForkGit');
@@ -71,7 +75,7 @@ export class GitService implements vscode.Disposable {
     await this.discoverRepositories();
     if (this.activeRoot) {
       try {
-        await this.requireActive().refresh();
+        await this.refresh();
       } catch (err) {
         this.reportError(err);
       }
@@ -132,13 +136,17 @@ export class GitService implements vscode.Disposable {
       }
     }
 
+    for (const root of [...this.repos.keys()]) {
+      if (!fs.existsSync(root)) this.repos.delete(root);
+    }
     for (const root of roots) {
+      if (!fs.existsSync(root)) continue;
       if (!this.repos.has(root)) {
         this.repos.set(root, new GitRepository(root, gitPath));
       }
     }
     if (!this.activeRoot && roots.size) {
-      this.activeRoot = [...roots][0];
+      this.activeRoot = [...roots].find((root) => this.repos.has(root)) ?? null;
     }
     if (this.activeRoot && !this.repos.has(this.activeRoot)) {
       this.activeRoot = this.repos.keys().next().value ?? null;
@@ -257,6 +265,15 @@ export class GitService implements vscode.Disposable {
   async refresh(): Promise<RepoState | null> {
     const repo = this.active;
     if (!repo) return null;
+    if (!fs.existsSync(repo.root)) {
+      this.output.appendLine(`[info] Repository folder no longer exists: ${repo.root}`);
+      this.repos.delete(repo.root);
+      if (this.activeRoot === repo.root) {
+        this.activeRoot = this.repos.keys().next().value ?? null;
+      }
+      this.emitState();
+      return null;
+    }
     try {
       const state = await repo.refresh();
       this.emitState();
@@ -350,11 +367,53 @@ export class GitService implements vscode.Disposable {
     }
   }
 
-  private async withProgress<T>(title: string, task: () => Promise<T>): Promise<T> {
-    return vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `ForkGit: ${title}`, cancellable: false },
-      () => task()
-    );
+  private emitProgress(progress: OperationProgress | null): void {
+    this.onDidProgressEmitter.fire(progress);
+  }
+
+  /**
+   * Runs a network operation with a visible notification and webview progress
+   * bar. Git reports transfer progress on stderr, including carriage-return
+   * updates that are parsed incrementally.
+   */
+  private async withNetworkProgress<T>(
+    operation: ProgressOperation,
+    label: string,
+    task: (onStderr: (chunk: string) => void) => Promise<T>
+  ): Promise<T> {
+    let lastEmit = 0;
+    this.emitProgress({ operation, label, percent: null, detail: 'Starting…' });
+    try {
+      return await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `ForkGit: ${label}`,
+          cancellable: false
+        },
+        async (progress) => {
+          progress.report({ message: 'Starting…' });
+          const parser = new GitProgressParser(operation, (update) => {
+            const now = Date.now();
+            if (now - lastEmit < 80 && update.phasePercent !== 100) return;
+            lastEmit = now;
+            this.emitProgress({
+              operation,
+              label,
+              percent: update.percent,
+              detail: update.detail
+            });
+            progress.report({ message: update.detail });
+          });
+          try {
+            return await task((chunk) => parser.push(chunk));
+          } finally {
+            parser.end();
+          }
+        }
+      );
+    } finally {
+      this.emitProgress(null);
+    }
   }
 
   private async confirm(message: string, action = 'Continue'): Promise<boolean> {
@@ -385,7 +444,11 @@ export class GitService implements vscode.Disposable {
     for (const branch of branches) {
       items.push({
         label: branch.name,
-        description: branch.current ? 'current' : `${branch.ahead ? `↑${branch.ahead}` : ''}${branch.behind ? ` ↓${branch.behind}` : ''}`,
+        description: branch.current
+          ? 'current'
+          : branch.upstream
+            ? `${branch.ahead} to push · ${branch.behind} to pull`
+            : 'no upstream',
         value: branch.name
       });
     }
@@ -405,9 +468,13 @@ export class GitService implements vscode.Disposable {
   }
 
   async fetch(all = true): Promise<void> {
-    await this.run(all ? 'Fetching all remotes' : 'Fetching', async (repo) => {
-      await this.withProgress('Fetching…', () =>
-        repo.cli.run(all ? ['fetch', '--all', '--prune'] : ['fetch', '--prune'], { timeout: 300_000 })
+    const label = all ? 'Fetching all remotes' : 'Fetching';
+    await this.run(label, async (repo) => {
+      await this.withNetworkProgress('fetch', label, (onStderr) =>
+        repo.cli.run(
+          all ? ['fetch', '--all', '--prune', '--progress'] : ['fetch', '--prune', '--progress'],
+          { timeout: 300_000, onStderr }
+        )
       );
       void vscode.window.setStatusBarMessage('ForkGit: fetch complete', 3000);
     });
@@ -428,11 +495,14 @@ export class GitService implements vscode.Disposable {
     }
     const rebase = this.config.pullRebase;
     const autostash = this.config.autoStash;
-    await this.run(rebase ? 'Pulling (rebase)' : 'Pulling', async (active) => {
-      const args = ['pull'];
+    const label = rebase ? 'Pulling (rebase)' : 'Pulling';
+    await this.run(label, async (active) => {
+      const args = ['pull', '--progress'];
       if (rebase) args.push('--rebase');
       if (autostash) args.push('--autostash');
-      await this.withProgress('Pulling…', () => active.cli.run(args, { timeout: 300_000 }));
+      await this.withNetworkProgress('pull', label, (onStderr) =>
+        active.cli.run(args, { timeout: 300_000, onStderr })
+      );
     });
   }
 
@@ -449,8 +519,9 @@ export class GitService implements vscode.Disposable {
     const branch = state.repo.head;
     const remotes = state.remotes.map((remote) => remote.name);
     const upstream = state.repo.upstream;
-    await this.run(force ? 'Force pushing' : 'Pushing', async (active) => {
-      const args = ['push'];
+    const label = force ? 'Force pushing' : 'Pushing';
+    await this.run(label, async (active) => {
+      const args = ['push', '--progress'];
       if (force) args.push('--force-with-lease');
       if (upstream) {
         args.push(upstream.split('/')[0], branch);
@@ -462,7 +533,9 @@ export class GitService implements vscode.Disposable {
         if (!remote) throw new Error('Cancelled');
         args.push('-u', remote, branch);
       }
-      await this.withProgress('Pushing…', () => active.cli.run(args, { timeout: 300_000 }));
+      await this.withNetworkProgress('push', label, (onStderr) =>
+        active.cli.run(args, { timeout: 300_000, onStderr })
+      );
     });
   }
 
@@ -619,23 +692,33 @@ export class GitService implements vscode.Disposable {
     await this.push(force);
   }
 
-  async setUpstream(): Promise<void> {
+  async setUpstream(branchName?: string): Promise<void> {
     const repo = this.active;
     if (!repo) return;
-    const branch = repo.latest?.repo.head;
+    const branch = branchName ?? repo.latest?.repo.head;
     if (!branch) return;
     const remotes = repo.latest?.remotes ?? [];
-    const remote = remotes.length === 1 ? remotes[0].name : await vscode.window.showQuickPick(remotes.map((r) => r.name), { title: 'Choose a remote' });
+    const remote =
+      remotes.length === 1
+        ? remotes[0].name
+        : await vscode.window.showQuickPick(
+            remotes.map((entry) => entry.name),
+            { title: 'Choose a remote' }
+          );
     if (!remote) return;
     const candidates = (repo.latest?.remotes.find((group) => group.name === remote)?.branches ?? []).map(
       (entry) => entry.fullName
     );
     const fallback = `${remote}/${branch}`;
+    const preferred = candidates.find((name) => name === fallback);
+    const ordered = candidates.length
+      ? [...(preferred ? [preferred] : []), ...candidates.filter((name) => name !== preferred)]
+      : [fallback];
     const upstream =
-      (await vscode.window.showQuickPick(
-        candidates.length ? candidates : [fallback],
-        { title: `Upstream for "${branch}"`, matchOnDescription: true }
-      )) ?? fallback;
+      (await vscode.window.showQuickPick(ordered, {
+        title: `Upstream for "${branch}"`,
+        matchOnDescription: true
+      })) ?? fallback;
     await this.run('Setting upstream', (active) =>
       active.cli.run(['branch', `--set-upstream-to=${upstream}`, branch])
     );
@@ -1103,7 +1186,7 @@ export class GitService implements vscode.Disposable {
         await this.pushBranch(payload?.name ? String(payload.name) : undefined);
         break;
       case 'setUpstream':
-        await this.setUpstream();
+        await this.setUpstream(payload?.name ? String(payload.name) : undefined);
         break;
       case 'pushTag':
         if (payload?.name) await this.pushTag(String(payload.name));
@@ -1203,6 +1286,7 @@ export class GitService implements vscode.Disposable {
     this.onDidChangeEmitter.dispose();
     this.onDidBusyEmitter.dispose();
     this.onDidWantViewEmitter.dispose();
+    this.onDidProgressEmitter.dispose();
     this.onDidFocusCommitEmitter.dispose();
     for (const disposable of this.disposables) disposable.dispose();
   }

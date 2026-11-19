@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 export interface GitRunOptions {
@@ -9,6 +10,7 @@ export interface GitRunOptions {
   env?: NodeJS.ProcessEnv;
   maxBuffer?: number;
   allowNonZero?: boolean;
+  onStderr?: (chunk: string) => void;
 }
 
 export interface GitResult {
@@ -35,6 +37,65 @@ export class GitError extends Error {
 let cachedGitVersion: string | null = null;
 let cachedGitPath: string | null = null;
 
+function normalizeGitExecutable(gitPath?: string): string {
+  const trimmed = gitPath?.trim();
+  if (!trimmed) return 'git';
+  if (trimmed === '~') return os.homedir();
+  if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) {
+    return path.join(os.homedir(), trimmed.slice(2));
+  }
+  return trimmed;
+}
+
+/**
+ * VS Code launched from the macOS Dock (or another GUI launcher) does not
+ * always inherit the PATH of the user's shell. Add the usual Git locations so
+ * `spawn('git')` still works when Homebrew or a manual install is not on the
+ * extension host's PATH.
+ */
+function gitEnvironment(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const current = process.env.PATH ?? '';
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'cmd'),
+          path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Git', 'cmd'),
+          current
+        ]
+      : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', current];
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const entry of candidates) {
+    if (!entry) continue;
+    for (const part of entry.split(path.delimiter)) {
+      if (part && !seen.has(part)) {
+        seen.add(part);
+        parts.push(part);
+      }
+    }
+  }
+  return {
+    ...process.env,
+    LC_ALL: 'C',
+    LANG: 'C',
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_OPTIONAL_LOCKS: '0',
+    PATH: parts.join(path.delimiter),
+    ...extra
+  };
+}
+
+function assertWorkingDirectory(cwd: string): void {
+  try {
+    if (fs.statSync(cwd).isDirectory()) return;
+  } catch {
+    // fall through
+  }
+  throw new Error(
+    `Repository folder not found: ${cwd}. The folder may have been moved or deleted; reload the window or reopen the repository.`
+  );
+}
+
 export async function detectGitVersion(gitPath?: string): Promise<string> {
   if (cachedGitVersion && cachedGitPath === (gitPath ?? '')) return cachedGitVersion;
   const result = await runGit(['--version'], process.cwd(), undefined, gitPath);
@@ -51,20 +112,18 @@ export async function runGit(
   gitPath?: string,
   options: Omit<GitRunOptions, 'cwd' | 'input'> = {}
 ): Promise<GitResult> {
-  const exe = gitPath?.trim() || 'git';
+  const exe = normalizeGitExecutable(gitPath);
   const fullArgs = ['-c', 'core.quotepath=false', '-c', 'color.ui=false', ...args];
+  try {
+    assertWorkingDirectory(cwd);
+  } catch (err) {
+    return Promise.reject(err);
+  }
 
   return new Promise<GitResult>((resolve, reject) => {
     const child = spawn(exe, fullArgs, {
       cwd,
-      env: {
-        ...process.env,
-        LC_ALL: 'C',
-        LANG: 'C',
-        GIT_TERMINAL_PROMPT: '0',
-        GIT_OPTIONAL_LOCKS: '0',
-        ...options.env
-      },
+      env: gitEnvironment(options.env),
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -106,16 +165,20 @@ export async function runGit(
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk;
       if (stderr.length > maxBuffer) stderr = stderr.slice(0, maxBuffer);
+      options.onStderr?.(chunk);
     });
 
     child.on('error', (err) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      const code = (err as NodeJS.ErrnoException).code;
       const message =
-        (err as NodeJS.ErrnoException).code === 'ENOENT'
-          ? `Git executable not found: ${exe}`
-          : `Failed to run git: ${err.message}`;
+        code === 'ENOENT'
+          ? `Git executable not found: ${exe}. Set "forkgit.gitPath" to the absolute path of git or add git to PATH.`
+          : code === 'EACCES'
+            ? `Git executable is not executable: ${exe}. Check its file permissions.`
+            : `Failed to run git: ${err.message}`;
       reject(new GitError(message, args, -1, stderr));
     });
 
@@ -184,18 +247,12 @@ export class GitCli {
 
   /** Runs git with stdout as a binary buffer. Used for image diffs. */
   async buffer(args: string[], options: GitRunOptions = {}): Promise<Buffer> {
-    const exe = this.gitPath?.trim() || 'git';
+    const exe = normalizeGitExecutable(this.gitPath);
     const fullArgs = ['-c', 'core.quotepath=false', ...args];
     return new Promise<Buffer>((resolve, reject) => {
       const child = spawn(exe, fullArgs, {
         cwd: options.cwd ?? this.cwd,
-        env: {
-          ...process.env,
-          LC_ALL: 'C',
-          LANG: 'C',
-          GIT_TERMINAL_PROMPT: '0',
-          ...options.env
-        },
+        env: gitEnvironment(options.env),
         stdio: ['pipe', 'pipe', 'pipe']
       });
       const chunks: Buffer[] = [];

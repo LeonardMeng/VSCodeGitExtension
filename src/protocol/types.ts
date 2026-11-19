@@ -208,6 +208,20 @@ export interface DiffOptions {
 }
 
 /* ------------------------------------------------------------------ */
+/* Operation progress                                                  */
+/* ------------------------------------------------------------------ */
+
+export type ProgressOperation = 'fetch' | 'pull' | 'push';
+
+export interface OperationProgress {
+  operation: ProgressOperation;
+  label: string;
+  /** Overall percentage, or null when Git has not reported a phase yet. */
+  percent: number | null;
+  detail: string;
+}
+
+/* ------------------------------------------------------------------ */
 /* Commit history                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -426,6 +440,7 @@ export type ToWebviewMessage =
   | { type: 'fileTree'; requestId: number; sha: string; entries: FileTreeEntry[]; truncated: boolean }
   | { type: 'stashPreview'; requestId: number; index: number; files: FileDiff[] | null; error?: string }
   | { type: 'busy'; busy: boolean; label?: string }
+  | { type: 'progress'; progress: OperationProgress | null }
   | { type: 'view'; view: WebviewView; section?: SidebarSection }
   | { type: 'commitMessage'; subject: string; description: string }
   | { type: 'recentCommits'; messages: string[] }

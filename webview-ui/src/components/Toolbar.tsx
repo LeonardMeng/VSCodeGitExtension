@@ -23,6 +23,7 @@ interface ToolbarProps {
   onMenuAction: (action: MenuAction, payload?: Record<string, unknown>) => void;
   onStashAction: (action: MenuAction, payload?: Record<string, unknown>) => void;
   onRefresh: () => void;
+  progressActive: boolean;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
 }
@@ -72,7 +73,7 @@ export function Toolbar(props: ToolbarProps): React.ReactElement {
       </div>
 
       <div className="toolbar-group toolbar-right">
-        {busy.busy ? (
+        {busy.busy && !props.progressActive ? (
           <div className="busy-indicator" title={busy.label}>
             <Spinner size={14} />
             <span className="busy-label">{busy.label ?? 'Working'}</span>

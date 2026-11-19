@@ -3,6 +3,7 @@ import {
   AppConfig,
   FromWebviewMessage,
   InitPayload,
+  OperationProgress,
   RepoDescriptor,
   RepoState,
   SidebarSection,
@@ -18,6 +19,7 @@ import { ChangesView } from './components/ChangesView';
 import { HistoryView } from './components/HistoryView';
 import { Spinner } from './components/Menu';
 import { ToastHost } from './components/ToastHost';
+import { OperationProgressBar } from './components/OperationProgress';
 import { Icon } from './components/Icon';
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -54,6 +56,7 @@ export default function App(): React.ReactElement {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [view, setView] = useState<WebviewView>('changes');
   const [busy, setBusy] = useState<{ busy: boolean; label?: string }>({ busy: false });
+  const [progress, setProgress] = useState<OperationProgress | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; level: 'info' | 'warn' | 'error'; message: string }>>([]);
   const [historyRef, setHistoryRef] = useState<string | null>(null);
   const [focusSection, setFocusSection] = useState<{ section: SidebarSection; nonce: number } | null>(null);
@@ -148,6 +151,7 @@ export default function App(): React.ReactElement {
           setActiveRepo(payload.activeRepo);
           setConfig(payload.config);
           setView(payload.view);
+          setProgress(null);
           setBooted(true);
           break;
         }
@@ -161,6 +165,9 @@ export default function App(): React.ReactElement {
           break;
         case 'busy':
           setBusy({ busy: message.busy, label: message.label });
+          break;
+        case 'progress':
+          setProgress(message.progress);
           break;
         case 'view':
           setView(message.view);
@@ -288,12 +295,14 @@ export default function App(): React.ReactElement {
         onMenuAction={(action, payload) => post({ type: 'menuAction', action, payload })}
         onStashAction={(action, payload) => post({ type: 'menuAction', action, payload })}
         onRefresh={() => post({ type: 'refresh' })}
+        progressActive={!!progress}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((value) => !value)}
       />
       {repos.length > 1 ? (
         <RepoBar repos={repos} activeRepo={activeRepo} onSelect={handleSelectRepo} onAdd={handleOpenRepository} />
       ) : null}
+      <OperationProgressBar progress={progress} />
       {active ? (
         <div className={`app-body${sidebarOpen ? ' sidebar-open' : ' sidebar-closed'}`}>
           <Sidebar
